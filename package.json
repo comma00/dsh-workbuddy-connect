@@ -47,10 +47,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/corrinehu/dsh-workbuddy-connect.git"
+    "url": "git+https://github.com/comma00/dsh-workbuddy-connect.git"
   },
-  "homepage": "https://github.com/corrinehu/dsh-workbuddy-connect#readme",
-  "bugs": "https://github.com/corrinehu/dsh-workbuddy-connect/issues",
+  "homepage": "https://github.com/comma00/dsh-workbuddy-connect#readme",
+  "bugs": {
+    "url": "https://github.com/comma00/dsh-workbuddy-connect/issues"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -72,12 +74,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.5",
-    "@deepseek-ai/dsh-attachment": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-settings": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-home-paths": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-settings": "0.2.2-rc.1",
     "@deepseek-ai/schemastery": "^3.18.5",
     "react": "^18.2.0"
   },

@@ -99,7 +99,10 @@ describe('peer manifest pins the verified DSH cores', () => {
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ) as { peerDependencies: Record<string, string> }
     for (const name of DSH_SERVICE_PEERS) {
-      expect(pkg.peerDependencies[name], `${name} missing from peerDependencies`).toBe('0.2.1-rc.2')
+      // 0.2.2-rc.1: the seven modules this package imports were re-checked on
+      // that core before moving the pins. The exact spelling is the point —
+      // see the docblock above; do not relax this to a range.
+      expect(pkg.peerDependencies[name], `${name} missing from peerDependencies`).toBe('0.2.2-rc.1')
     }
   })
 
