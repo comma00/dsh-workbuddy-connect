@@ -1,0 +1,23 @@
+# Normalize every text file to LF in the repository AND in the working tree,
+# regardless of the contributor's `core.autocrlf`.
+#
+# This is not cosmetic. `lib/bin.js` is the `dsh-workbuddy-connect` bin (see
+# `bin` in package.json) and tsdown grants it execute permission. With CRLF on
+# disk its first line is `#!/usr/bin/env node\r`, and a Unix kernel then reads
+# the interpreter as `node\r` — a binary that does not exist, so the command
+# fails to exec. `npm pack` ships the working tree, so packing on a Windows
+# checkout publishes a broken executable.
+* text=auto eol=lf
+
+# Bitmap and archive assets are binary; `text=auto` already skips them, this
+# makes the intent explicit and survives a future `text=auto` regression.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.wasm binary
