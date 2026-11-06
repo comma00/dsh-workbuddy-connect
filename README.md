@@ -7,6 +7,12 @@
 
 将已登录的 WorkBuddy / WorkBuddy AI 桌面应用中可用的模型接入 DeepSeek Harness；两版分别显示各自的模型分组，并沿用各自的账号登录与积分。
 
+> **DSH 升级后先跑 `pnpm run check:host`。** 服务 peer 是精确钉版（见
+> `tests/version.spec.ts` 的 docblock），这是刻意的：caret 会静默放行没人跑过的 rc。
+> 代价是每次内核升级都要核对一遍 —— 这个命令就是那一步，它比对 6 个 peer 的声明值与
+> 宿主实际版本，并确认本包 import 的具名导出仍然存在。加 `--write` 可在核对通过后
+> 把清单搬到当前内核。
+
 ## 安装
 
 **前置**：本机已安装并登录 WorkBuddy（国内版）或 WorkBuddy AI 桌面 App。插件直接复用 App 的登录状态，账号切换自动跟随，两版互不影响。

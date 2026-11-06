@@ -25,7 +25,8 @@
     "build": "tsdown",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
-    "check": "pnpm run typecheck && pnpm run test && pnpm run build"
+    "check:host": "node scripts/check-host-compat.mjs",
+    "check": "pnpm run check:host && pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "exports": {
     ".": {
