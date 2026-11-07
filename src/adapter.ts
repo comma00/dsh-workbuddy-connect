@@ -28,11 +28,19 @@ export const WORKBUDDY_STREAM_IDLE_TIMEOUT_MS = 300_000
 
 /**
  * Image-request budgets at the dsh-llm-pi-ai defaults; the profile type made
- * them required in 0.1.1-rc.2. They bound requests to models whose catalog
- * entry declares `supportsImages`; text-only models never receive images.
+ * them required in 0.1.1-rc.2, and the two count bounds joined them in
+ * 0.2.2-rc.1. They bound requests to models whose catalog entry declares
+ * `supportsImages`; text-only models never receive images.
+ *
+ * The count pair mirrors `resolveProfiles()` exactly (`50`, and
+ * `Math.min(10, maxRequestImages)`): retained occurrences beyond the bound
+ * fail with `IMAGE_OFFLOAD_REQUIRED`, and `dsh-compaction-image-offload`
+ * retries after recording `imageOffloadCountQuantum` oldest occurrences.
  */
 const REQUEST_IMAGE_BUDGETS = {
   maxRequestImageBytes: 20_971_520,
+  maxRequestImages: 50,
+  imageOffloadCountQuantum: 10,
   requestImagePixelBudget: 4_194_304,
   requestImageMaxBytes: 1_048_576,
 } as const

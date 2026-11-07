@@ -112,7 +112,7 @@ describe('peer manifest pins the verified DSH cores', () => {
     const pkg = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ) as { peerDependencies: Record<string, string>, devDependencies: Record<string, string> }
-    expect(pkg.devDependencies['@deepseek-ai/dsh-atomic-write']).toBe('0.2.1-rc.2')
+    expect(pkg.devDependencies['@deepseek-ai/dsh-atomic-write']).toBe('0.2.2-rc.1')
     expect(pkg.peerDependencies['@deepseek-ai/dsh-atomic-write']).toBeUndefined()
   })
 
@@ -138,5 +138,31 @@ describe('peer manifest pins the verified DSH cores', () => {
     // The dev entry keeps local builds and tests on the same generation, and
     // stays exact so no caret can widen the supported set by itself.
     expect(pkg.devDependencies['@earendil-works/pi-ai']).toBe('1.3.0')
+  })
+
+  it('audits cordis, not just dsh-* packages', () => {
+    // Regression guard for a real escape. The audit filtered peers on
+    // `@deepseek-ai/dsh-`, so `cordis` was never compared with the host. That
+    // hid a genuine break: dsh-settings 0.2.2-rc.1 reads
+    // `fiber.effectiveConfig`, which cordis 4.0.5 does not define, so a 4.0.x
+    // host silently reports `undefined` values through `describe()`. Filtering
+    // on `dsh-` alone reported a clean audit the whole time.
+    const audit = readFileSync(new URL('../scripts/check-host-compat.mjs', import.meta.url), 'utf8')
+    expect(audit).toContain("@deepseek-ai/cordis")
+    expect(
+      /startsWith\('@deepseek-ai\/dsh-'\)/.test(audit),
+      'the pin audit must not narrow itself to dsh-* again; cordis is a core',
+    ).toBe(false)
+  })
+
+  it('keeps cordis aligned with the core that requires it', () => {
+    // dsh-settings 0.2.2-rc.1 requires `cordis ~4.1.0`, and its `describe()`
+    // depends on a property 4.0.x lacks. The declared range must therefore
+    // admit 4.1.0 — the version this core's own tree ships.
+    const pkg = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { peerDependencies: Record<string, string>, devDependencies: Record<string, string> }
+    expect(pkg.peerDependencies['@deepseek-ai/cordis']).toBe('^4.1.0')
+    expect(pkg.devDependencies['@deepseek-ai/cordis']).toBe('^4.1.0')
   })
 })

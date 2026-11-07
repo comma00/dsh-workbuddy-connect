@@ -1162,7 +1162,26 @@ describe('WorkBuddy Host settings integration', () => {
         saved = next
         writes += 1
         // Model the editor applying resolved Config after a successful save.
-        Object.assign(pluginFiber!.config, resolveConfig({ name: 'fixture', callback() {}, Config: WorkBuddy.Config } as never, saved))
+        //
+        // dsh-settings 0.2.2-rc.1 changed `describe()` to project its `value`
+        // from `fiber.effectiveConfig` (the config the fiber actually
+        // resolved) instead of `fiber.config` (raw input retained only for the
+        // next activation). `effectiveConfig` is a getter answering
+        // `this.ctx.fiber._effectiveConfig`, so a fixture that only mutates
+        // `config` no longer models a successful write: `describe()` would keep
+        // reporting the previous value and the plugin's post-write
+        // confirmation would rightly reject it. Production lands on the same
+        // field — ConfigEditor.edit() resolves the candidate and reconciles the
+        // profile, whose reload publishes `_effectiveConfig`.
+        //
+        // `_effectiveConfig` is unset on this fixture's fiber (the real host
+        // sets it during activation), so it is assigned outright rather than
+        // merged into a live object.
+        const resolved = resolveConfig({ name: 'fixture', callback() {}, Config: WorkBuddy.Config } as never, saved)
+        const fiber = (pluginFiber as { ctx?: { fiber?: Record<string, unknown> } }).ctx?.fiber
+        if (fiber === undefined) throw new Error('fixture lost the plugin fiber reference')
+        Object.assign(pluginFiber!.config, resolved)
+        Object.assign(fiber, { _effectiveConfig: resolved })
       },
     }
 

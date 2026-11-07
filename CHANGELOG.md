@@ -40,6 +40,33 @@ npm 上最后一个版本是 `0.7.9`（2026-10-19）。本仓库从该版本接�
   就再也不会起作用，与上述策略冲突。peer 钉子仍是唯一的闸门 —— DSH 每次升级都会
   明确报错并要求重新核对，而不是悄悄跑在没验证过的内核上。
 
+- **`cordis` 也要跟着内核走**（`package.json`）
+  上面那轮只搬了 `@deepseek-ai/dsh-*`，漏掉了 `cordis` 本身 —— 而它同样是被
+  内核约束的：`dsh-settings@0.2.2-rc.1` 要求 `cordis ~4.1.0`，并且它的
+  `describe()` 改为从 `fiber.effectiveConfig` 取值。该属性在 `cordis 4.0.5` 上
+  **根本不存在**，于是 4.0.x 宿主上 `describe()` 静默返回 `undefined`。
+
+  本包声明的 `^4.0.5` 会解析到 `4.0.5`，比宿主实际加载的 `4.1.0` 旧一档。
+  两边都改为 `^4.1.0`。
+
+  这不是纸面问题：节省上下文窗口的开关在写入后会回读 `describe()` 校验，
+  在 4.0.5 下读回 `undefined` 会被正确地判为「写入未生效」，开关就永远失败。
+  本地测试抓到了这一点（`tests/settings-integration.spec.ts` 的 3 个延迟绑定用例）。
+
+  测试夹具也一并修正：它原先只改写 `fiber.config`，而 `describe()` 现在读的是
+  `fiber.effectiveConfig`，需要建模真实编辑器写入后发布的那一步。
+
+- **`check:host` 不再只看 `dsh-*`**（`scripts/check-host-compat.mjs`）
+  核对脚本原先按 `@deepseek-ai/dsh-` 前缀过滤 peer，`cordis` 因此从未被比对过，
+  上面那个断裂在「核对通过」的假象下藏了很久。
+
+  现在核对**所有** `@deepseek-ai/*` peer：精确钉子必须与宿主版本相等；声明为
+  范围的（如 `cordis: ^4.1.0`）则用宿主自己的 semver 实际判定是否覆盖宿主版本。
+  范围无法判定时记为 `unverified` 并以退出码 `2` 结束 —— 沉默通过正是问题藏身之处。
+  `--write` 只搬精确钉子，绝不把有意写成的范围收窄成单一版本。
+
+  新增两条回归测试锁住这个覆盖面（`tests/version.spec.ts`）。
+
 - **仓库地址指向本仓库**（`package.json`、`README.md`）
   `repository` / `homepage` / `bugs` 与安装说明里的项目地址原先都指向已消失的
   `corrinehu` 仓库。`author` 保留原署名，README 里历史版本的 issue / releases
@@ -59,8 +86,9 @@ npm 上最后一个版本是 `0.7.9`（2026-10-19）。本仓库从该版本接�
 
   退出码：`0` 一致，`1` 版本错位或导出缺失，`2` 宿主无法检查。
 
-  它报告两件事：6 个服务 peer 的声明值与宿主实际版本是否一致；本包真正调用的
-  3 个模块（`dsh-llm`、`dsh-home-paths`、`dsh-llm-pi-ai`）的具名导出是否仍然存在。
+  它报告两件事：所有 `@deepseek-ai/*` peer 的声明与宿主实际版本是否相符；本包真正
+  调用的模块（`dsh-llm`、`dsh-home-paths`、`dsh-llm-pi-ai`、`cordis`）的具名导出
+  是否仍然存在。
 
   两个设计取舍写在脚本注释里：宿主模块 import 失败记为 `unverified` 而不是失败
   （宿主库在运行时之外可能拒绝加载，误报会掩盖真问题）；具名导出缺失才算真断裂。
@@ -72,10 +100,15 @@ npm 上最后一个版本是 `0.7.9`（2026-10-19）。本仓库从该版本接�
 
 ### 构建
 
-- **`lib/` 未重建**
-  本次只改清单、文档、测试与脚本，未触及 `src/`。用 pnpm 装到的 tsdown 重建会改变
-  `version-resolve` 的产物 hash，那是工具链差异而非源码差异，因此保留已发布的
-  `lib/` 原样。`pnpm run check` 会连带跑一次 `build`，跑完记得回退 `lib/`。
+- **`lib/` 需要重建**
+  `src/adapter.ts` 有实质改动：`dsh-llm-pi-ai@0.2.2-rc.1` 把 `maxRequestImages` 与
+  `imageOffloadCountQuantum` 加为 `ResolvedPiAiProviderProfile` 的必填字段，而本包是
+  手工装配该 profile（该包的 `resolveProfiles()` 不在公开导出面上），必须显式补上，
+  否则新内核上图片请求的计数上限无从取值。
+
+  值得注意的是：用 pnpm 装到的 tsdown 重建会顺带改变 `version-resolve` 的产物 hash，
+  那是工具链差异而非源码差异。本次因为 `src/` 确实改了，重建是**必要**的，hash 变化
+  一并接受。
 
 ---
 

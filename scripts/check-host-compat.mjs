@@ -21,6 +21,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -40,6 +41,10 @@ const RUNTIME_SURFACE = {
   '@deepseek-ai/dsh-llm': ['resolveImageAttachmentAccess', 'resolveRetryPolicy'],
   '@deepseek-ai/dsh-home-paths': ['resolveDshHome'],
   '@deepseek-ai/dsh-llm-pi-ai': ['PiAiAdapter'],
+  // `cordis` is here because dsh-settings reaches into the fiber through it:
+  // 0.2.2-rc.1's `describe()` reads `fiber.effectiveConfig`, which cordis 4.0.5
+  // does not define, so a 4.0.x host silently reports `undefined` values.
+  '@deepseek-ai/cordis': ['Context'],
 }
 
 /** Parse the two flags the audit understands. */
@@ -90,15 +95,38 @@ function hostCopyOf(hostDir, name) {
 /**
  * Compare the pinned peers with the cores the host actually ships.
  *
- * `schemastery` and `react` are excluded: they are ordinary libraries whose
- * ranges are caret-spanned on purpose, not DSH cores that must be audited.
+ * Every `@deepseek-ai/*` peer is audited, not only `dsh-*`: `cordis` is a core
+ * in the same sense (dsh-settings 0.2.2-rc.1 requires `~4.1.0`, and its
+ * `describe()` reads `fiber.effectiveConfig` — a property cordis 4.0.5 does
+ * not have at all), and an earlier `dsh-`-only filter let exactly that drift
+ * through while reporting a clean audit.
+ *
+ * Exact pins must equal the host's version. A declared range must actually
+ * admit it, so `cordis: ^4.1.0` is verified against 4.1.0 rather than being
+ * skipped. `react` is excluded: an ordinary library, careted on purpose.
  */
-function auditPins(manifest, hostDir) {
+const EXCLUDED_FROM_PIN_AUDIT = new Set(['react'])
+
+function isExactPin(declared) {
+  return !/[\^~><=*x]|\s-\s|\|\||\s/.test(declared)
+}
+
+function auditPins(manifest, hostDir, satisfies) {
   const rows = []
   for (const [name, pinned] of Object.entries(manifest.peerDependencies ?? {})) {
-    if (!name.startsWith('@deepseek-ai/dsh-')) continue
+    if (!name.startsWith('@deepseek-ai/')) continue
+    if (EXCLUDED_FROM_PIN_AUDIT.has(name)) continue
     const installed = manifestAt(hostCopyOf(hostDir, name))?.version
-    rows.push({ name, pinned, installed, ok: installed === pinned })
+    const exact = isExactPin(pinned)
+    let ok
+    if (installed === undefined) ok = false
+    else if (exact) ok = installed === pinned
+    else if (satisfies === undefined) ok = undefined
+    else ok = satisfies(installed, pinned)
+    // `ok: undefined` means the range could not be evaluated here (no semver
+    // resolvable from the host). Reporting that as a mismatch would be a false
+    // alarm that sends someone to "fix" a version that is in fact fine.
+    rows.push({ name, pinned, installed, exact, ok })
   }
   return rows
 }
@@ -157,6 +185,24 @@ function writeVersion(version, pins) {
   writeFileSync(VERSION_SPEC, nextSpec)
 }
 
+/**
+ * Resolve the host's own semver, or undefined when it has none.
+ *
+ * Resolving semver from the host rather than from here is deliberate: the host
+ * evaluates ranges with `{ includePrerelease: true }`, and a local copy without
+ * that flag answers a different question — `>=0.2.0-rc.1 <0.3.0` does NOT admit
+ * `0.2.2-rc.1` under default semantics, but does under the host's.
+ */
+function hostSatisfies(hostDir) {
+  let semver
+  try {
+    semver = createRequire(join(hostDir, 'package.json'))('semver')
+  } catch {
+    return undefined
+  }
+  return (version, range) => semver.satisfies(version, range, { includePrerelease: true })
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (options.help === true) {
@@ -169,7 +215,7 @@ async function main() {
   if (hostVersion === undefined) throw new Error(`${hostDir} has no readable package.json`)
 
   const manifest = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8'))
-  const pins = auditPins(manifest, hostDir)
+  const pins = auditPins(manifest, hostDir, hostSatisfies(hostDir))
   const surface = await auditSurface(hostDir)
 
   console.log(`host   ${hostDir}`)
@@ -178,8 +224,9 @@ async function main() {
   console.log('')
 
   console.log('pins')
-  for (const { name, pinned, installed, ok } of pins) {
-    console.log(`  ${ok ? 'ok  ' : 'MISMATCH'}  ${name.padEnd(34)} ${String(installed ?? '(absent)').padEnd(12)} declared ${pinned}`)
+  for (const { name, pinned, installed, exact, ok } of pins) {
+    const label = ok === true ? 'ok  ' : ok === false ? 'MISMATCH' : 'unverified'
+    console.log(`  ${label}  ${name.padEnd(34)} ${String(installed ?? '(absent)').padEnd(12)} declared ${pinned}${exact ? '' : ' (range)'}`)
   }
 
   console.log('')
@@ -191,7 +238,8 @@ async function main() {
     else console.log(`  unverified  ${row.name.padEnd(30)} ${row.reason}`)
   }
 
-  const mismatched = pins.filter(row => !row.ok)
+  const mismatched = pins.filter(row => row.ok === false)
+  const pinUnverified = pins.filter(row => row.ok === undefined)
   const broken = surface.filter(row => row.state === 'absent' || row.state === 'missing')
   const unverified = surface.filter(row => row.state === 'unverified')
 
@@ -200,15 +248,32 @@ async function main() {
     console.error('this package calls host exports the core no longer provides; it cannot run on this core.')
     return 1
   }
+  if (pinUnverified.length > 0) {
+    // A range that could not be evaluated is not a pass: silence here is how a
+    // real gap hides, so it is reported and the run stays non-clean.
+    console.error(`${pinUnverified.length} pin(s) could not be verified here: `
+      + pinUnverified.map(row => `${row.name} (declared ${row.pinned})`).join(', '))
+    console.error('  no semver was resolvable from the host; confirm against a real DSH installation.')
+    return 2
+  }
   if (mismatched.length === 0) {
     if (unverified.length > 0) console.log('pins match. Some modules could not be loaded here — confirm with a real run.')
     else console.log('pins match and every imported export is present.')
     return 0
   }
   if (options.write === true) {
-    writeVersion(hostVersion, mismatched)
-    console.log(`moved ${mismatched.length} pin(s) and the test expectation to ${hostVersion}; re-run the suite.`)
-    return 0
+    // Only exact pins may be moved: rewriting a deliberate range (e.g.
+    // `cordis: ^4.1.0`) to one version would silently narrow it.
+    const movable = mismatched.filter(row => row.exact)
+    const ranged = mismatched.filter(row => !row.exact)
+    if (movable.length > 0) writeVersion(hostVersion, movable)
+    if (ranged.length > 0) {
+      console.error(`${ranged.length} ranged pin(s) do not admit the core and were left alone: `
+        + ranged.map(row => `${row.name} (declared ${row.pinned}, host ${row.installed})`).join(', '))
+      console.error('  widen or move these by hand; a range is a deliberate decision.')
+    }
+    if (movable.length > 0) console.log(`moved ${movable.length} pin(s) and the test expectation to ${hostVersion}; re-run the suite.`)
+    return ranged.length > 0 ? 1 : 0
   }
   console.error(`${mismatched.length} pin(s) do not match the running core.`)
   console.error(`  review the surface above, then re-run with --write to move the pins to ${hostVersion}.`)
